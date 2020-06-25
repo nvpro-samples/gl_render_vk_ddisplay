@@ -164,7 +164,6 @@ auto initPrograms(Data& rd) -> bool
 
   pm.addDirectory(std::string(PROJECT_NAME));
   pm.addDirectory(NVPSystem::exePath() + std::string(PROJECT_RELDIRECTORY));
-  pm.addDirectory(std::string(PROJECT_ABSDIRECTORY));
 
   pm.registerInclude("common.h", "common.h");
   pm.registerInclude("noise.glsl", "noise.glsl");
