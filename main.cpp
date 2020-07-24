@@ -476,7 +476,7 @@ Sample::Sample()
 
 bool Sample::begin()
 {
-  ImGuiH::Init(m_windowState.m_viewSize[0], m_windowState.m_viewSize[1], this);
+  ImGuiH::Init(m_windowState.m_swapSize[0], m_windowState.m_swapSize[1], this);
   ImGui::InitGL();
 
   setVsync(false);
@@ -531,8 +531,8 @@ void Sample::processUI(double time)
     timeBegin                   = time;
   }
 
-  int width  = m_windowState.m_viewSize[0];
-  int height = m_windowState.m_viewSize[1];
+  int width  = m_windowState.m_swapSize[0];
+  int height = m_windowState.m_swapSize[1];
 
   // Update imgui configuration
   auto& imgui_io       = ImGui::GetIO();
@@ -592,7 +592,7 @@ void Sample::think(double time)
     m_profilerPrint = m_rd.uiData.m_profilerPrint;
 
     // handle mouse input
-    m_control.processActions(m_windowState.m_viewSize,
+    m_control.processActions(m_windowState.m_swapSize,
                              nvmath::vec2f(m_windowState.m_mouseCurrent[0], m_windowState.m_mouseCurrent[1]),
                              m_windowState.m_mouseButtonFlags, m_windowState.m_mouseWheel);
 
@@ -704,8 +704,8 @@ void Sample::think(double time)
 
 void Sample::resize(int width, int height)
 {
-  m_windowState.m_viewSize[0] = width;
-  m_windowState.m_viewSize[1] = height;
+  m_windowState.m_swapSize[0] = width;
+  m_windowState.m_swapSize[1] = height;
 
   m_rd.windowWidth  = width;
   m_rd.windowHeight = height;
