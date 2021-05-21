@@ -1,38 +1,35 @@
-/* Copyright (c) 2014-2020, NVIDIA CORPORATION. All rights reserved.
+/*
+ * Copyright (c) 2014-2021, NVIDIA CORPORATION.  All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
+ * SPDX-License-Identifier: Apache-2.0
  */
+
 
  /* Contact iesser@nvidia.com (Ingo Esser) for feedback */
 
-
-#include "VKDirectDisplay.h"
+#include "VKDDisplay.h"
 
 #include <algorithm>
+#include <iostream>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
+
+typedef VkResult(*PFN_vkAcquireWinrtDisplayNV)(VkPhysicalDevice physicalDevice, VkDisplayKHR display);
+PFN_vkAcquireWinrtDisplayNV pfn_vkAcquireWinrtDisplayNV = nullptr;
 
 // required instance extenstions
 const std::vector<const char*> requiredInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_DISPLAY_EXTENSION_NAME,
@@ -42,7 +39,7 @@ const std::vector<const char*> requiredInstanceExtensions = {VK_KHR_SURFACE_EXTE
 // required device extensions
 const std::vector<const char*> requiredDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
-    VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME};
+    VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME, "VK_NV_acquire_winrt_display"};
 
 VKDirectDisplay::VKDirectDisplay() {}
 
@@ -62,7 +59,7 @@ bool VKDirectDisplay::init()
   }
   catch(std::exception const& e)
   {
-    LOGE("VKDirectDisplay::init() failed: %s", e.what());
+    LOGE("VKDirectDisplay::init() failed: %s\n", e.what());
     return false;
   }
 }
@@ -140,11 +137,14 @@ void VKDirectDisplay::createInstance()
 {
   vk::DynamicLoader         dl;
   PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr =
-      dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
+    dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
   VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
 
   // check for required instance extensions
   std::vector<vk::ExtensionProperties> availableInstanceExtensions = vk::enumerateInstanceExtensionProperties();
+
+  std::cout << "\nChecking Instance Extensions\n";
+
   for(const auto& required : requiredInstanceExtensions)
   {
     bool found = false;
@@ -153,12 +153,13 @@ void VKDirectDisplay::createInstance()
       if(std::string(required) == available.extensionName)
       {
         found = true;
+        std::cout << "OK: " << required << "\n";
         break;
       }
     }
     if(!found)
     {
-      throw std::exception(("Required instance extension not found: " + std::string(required)).c_str());
+      throw std::exception(("Required instance extension not found: " + std::string(required) + "\n").c_str());
     }
   }
   vk::InstanceCreateInfo createInfo{
@@ -167,19 +168,25 @@ void VKDirectDisplay::createInstance()
   m_instance = vk::createInstanceUnique(createInfo);
 
   VULKAN_HPP_DEFAULT_DISPATCHER.init(m_instance.get());
+
+  pfn_vkAcquireWinrtDisplayNV = (PFN_vkAcquireWinrtDisplayNV)vkGetInstanceProcAddr(m_instance.get(), "vkAcquireWinrtDisplayNV");
 }
 
 bool VKDirectDisplay::checkDeviceExtensionSupport(vk::PhysicalDevice device)
 {
-  std::vector<vk::ExtensionProperties> availableExtensions = device.enumerateDeviceExtensionProperties();
+  std::vector<vk::ExtensionProperties> availableDeviceExtensions = device.enumerateDeviceExtensionProperties();
+
+  std::cout << "\nChecking Device Extensions\n";
+
   for(const auto& required : requiredDeviceExtensions)
   {
     bool found = false;
-    for(const auto& available : availableExtensions)
+    for(const auto& available : availableDeviceExtensions)
     {
       if(std::string(required) == available.extensionName)
       {
         found = true;
+        std::cout << "OK: " << required << "\n";
         break;
       }
     }
@@ -220,10 +227,10 @@ void VKDirectDisplay::createDisplaySurface()
 
   // pick first available display
   m_display.displayProperties = m_gpu.getDisplayPropertiesKHR()[0];
-  const auto& display         = m_display.displayProperties.display;
+  m_display.displayKHR        = m_display.displayProperties.display;
 
   // pick highest available resolution
-  auto modes               = m_gpu.getDisplayModePropertiesKHR(display);
+  auto modes               = m_gpu.getDisplayModePropertiesKHR(m_display.displayKHR);
   m_display.modeProperties = modes[0];
   for(auto& m : modes)
   {
@@ -244,7 +251,7 @@ void VKDirectDisplay::createDisplaySurface()
     auto p = planes[i];
 
     // skip planes bound to different display
-    if(p.currentDisplay && (p.currentDisplay != display))
+    if(p.currentDisplay && (p.currentDisplay != m_display.displayKHR))
     {
       continue;
     }
@@ -253,7 +260,7 @@ void VKDirectDisplay::createDisplaySurface()
 
     for(auto& d : supportedDisplays)
     {
-      if(d == display)
+      if(d == m_display.displayKHR)
       {
         foundPlane = true;
         planeIndex = i;
@@ -299,6 +306,8 @@ void VKDirectDisplay::createDisplaySurface()
                                                                  m_display.modeProperties.parameters.visibleRegion.height)};
 
   m_surface = m_instance->createDisplayPlaneSurfaceKHRUnique(surfaceCreateInfo);
+
+  VkResult res = pfn_vkAcquireWinrtDisplayNV(m_gpu, m_display.displayKHR);
 
   const auto& d = m_display.displayProperties;
   LOGOK("Using display: %s\n  physical resolution: %i x %i\n", d.displayName, d.physicalResolution.width,

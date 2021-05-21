@@ -1,31 +1,24 @@
-/* Copyright (c) 2014-2020, NVIDIA CORPORATION. All rights reserved.
+/*
+ * Copyright (c) 2014-2021, NVIDIA CORPORATION.  All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
+ * SPDX-License-Identifier: Apache-2.0
  */
 
- /* Contact iesser@nvidia.com (Ingo Esser) for feedback */
+
+/* Contact iesser@nvidia.com (Ingo Esser) for feedback */
 
 
 #define NVGLF_DEBUG_FILTER 1
@@ -33,8 +26,8 @@
 #include <include_gl.h>
 #include <windows.h>
 
+#include <imgui/backends/imgui_impl_gl.h>
 #include <imgui/imgui_helper.h>
-#include <imgui/imgui_impl_gl.h>
 
 #include <nvgl/appwindowprofiler_gl.hpp>
 #include <nvgl/base_gl.hpp>
@@ -51,8 +44,8 @@
 #include <sstream>
 #include <thread>
 
+#include "VKDDisplay.h"
 #include "common.h"
-#include "VKDirectDisplay.h"
 
 namespace {
 int const SAMPLE_SIZE_WIDTH  = 800;
@@ -61,8 +54,6 @@ int const SAMPLE_SIZE_HEIGHT = 600;
 int const SAMPLE_MAJOR_VERSION = 4;
 int const SAMPLE_MINOR_VERSION = 5;
 }  // namespace
-
-
 
 
 namespace render {
@@ -469,7 +460,7 @@ protected:
 };
 
 Sample::Sample()
-    : nvgl::AppWindowProfilerGL(/*singleThreaded=*/true, /*doSwap=*/true)
+    : nvgl::AppWindowProfilerGL(/*singleThreaded=*/true)
     , m_frameCount(0)
 {
 }
@@ -505,11 +496,11 @@ bool Sample::begin()
   // initialize VK ddisplay class
   validated &= m_vkdd.init();
 
-  m_rd.uiData.m_texWidth = m_vkdd.getWidth();
+  m_rd.uiData.m_texWidth  = m_vkdd.getWidth();
   m_rd.uiData.m_texHeight = m_vkdd.getHeight();
-  
+
   render::initTextures(m_rd);
-  
+
   return validated;
 }
 
@@ -543,11 +534,11 @@ void Sample::processUI(double time)
 
   ImGui::NewFrame();
   ImGui::SetNextWindowPos(ImVec2(5, 5), ImGuiCond_FirstUseEver);
-  ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImGuiH::dpiScaled(350, 0), ImGuiCond_FirstUseEver);
 
   if(ImGui::Begin("NVIDIA " PROJECT_NAME, nullptr))
   {
-    ImGui::PushItemWidth(150);
+    ImGui::PushItemWidth(ImGuiH::dpiScaled(150));
 
     // TODO: reactivate, handle change in GL and VK?
     //ImGuiH::InputIntClamped("tex w", &m_rd.uiData.m_texWidth, 10, INT_MAX, 10, 100, ImGuiInputTextFlags_EnterReturnsTrue);
@@ -642,7 +633,7 @@ void Sample::think(double time)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_rd.tex.depthTex, 0);
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
       LOGE("Framebuffer check failed: %i\n", glCheckFramebufferStatus(GL_FRAMEBUFFER));
     }
@@ -655,7 +646,7 @@ void Sample::think(double time)
 
   {
     NV_PROFILE_GL_SECTION("render");
-    // render tori into texture 
+    // render tori into texture
     renderTori(m_rd, m_rd.uiData.m_vertexLoad, displayWidth, displayHeight, view);
   }
 
@@ -731,7 +722,7 @@ void Sample::end()
 
 int main(int argc, const char** argv)
 {
-  NVPSystem system(argv[0], PROJECT_NAME);
+  NVPSystem system(PROJECT_NAME);
 
   Sample sample;
   return sample.run(PROJECT_NAME, argc, argv, SAMPLE_SIZE_WIDTH, SAMPLE_SIZE_HEIGHT);
