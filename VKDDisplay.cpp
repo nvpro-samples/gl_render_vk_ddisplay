@@ -357,7 +357,7 @@ void VKDirectDisplay::createLogicalDevice()
   m_device       = m_gpu.createDeviceUnique(deviceCreateInfo);
   m_presentQueue = m_device->getQueue(m_presentFamily, 0);
 
-  load_VK_EXTENSION_SUBSET(m_instance.get(), vkGetInstanceProcAddr, m_device.get(), vkGetDeviceProcAddr);
+  load_VK_EXTENSIONS(m_instance.get(), vkGetInstanceProcAddr, m_device.get(), vkGetDeviceProcAddr);
 }
 
 void VKDirectDisplay::createSwapchain()
