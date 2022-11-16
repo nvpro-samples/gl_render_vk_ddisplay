@@ -597,20 +597,20 @@ void Sample::think(double time)
     auto proj =
         nvmath::perspective(45.f, float(displayWidth) / float(displayHeight), m_rd.sceneData.projNear, m_rd.sceneData.projFar);
 
-    float         depth      = 1.0f;
-    nvmath::vec4f background = nvmath::vec4f(118.f / 255.f, 185.f / 255.f, 0.f / 255.f, 0.f / 255.f);
+    float               depth      = 1.0f;
+    const nvmath::vec4f background = nvmath::vec4f(118.f / 255.f, 185.f / 255.f, 0.f / 255.f, 0.f / 255.f);
 
     // calculate some coordinate systems
     view                        = m_control.m_viewMatrix;
     nvmath::mat4f iview         = invert(view);
     nvmath::vec3f eyePos_world  = nvmath::vec3f(iview(0, 3), iview(1, 3), iview(2, 3));
-    nvmath::vec3f eyePos_view   = view * nvmath::vec4f(eyePos_world, 1);
+    nvmath::vec3f eyePos_view   = nvmath::vec3f(view * nvmath::vec4f(eyePos_world, 1));
     nvmath::vec3f right_view    = nvmath::vec3f(1.0f, 0.0f, 0.0f);
     nvmath::vec3f up_view       = nvmath::vec3f(0.0f, 1.0f, 0.0f);
     nvmath::vec3f forward_view  = nvmath::vec3f(0.0f, 0.0f, -1.0f);
-    nvmath::vec3f right_world   = iview * nvmath::vec4f(right_view, 0.0f);
-    nvmath::vec3f up_world      = iview * nvmath::vec4f(up_view, 0.0f);
-    nvmath::vec3f forward_world = iview * nvmath::vec4f(forward_view, 0.0f);
+    nvmath::vec3f right_world   = nvmath::vec3f(iview * nvmath::vec4f(right_view, 0.0f));
+    nvmath::vec3f up_world      = nvmath::vec3f(iview * nvmath::vec4f(up_view, 0.0f));
+    nvmath::vec3f forward_world = nvmath::vec3f(iview * nvmath::vec4f(forward_view, 0.0f));
 
     // fill sceneData struct
     m_rd.sceneData.viewMatrix      = view;
@@ -619,7 +619,7 @@ void Sample::think(double time)
     m_rd.sceneData.lightPos_world  = eyePos_world + right_world;
     m_rd.sceneData.eyepos_world    = eyePos_world;
     m_rd.sceneData.eyePos_view     = eyePos_view;
-    m_rd.sceneData.backgroundColor = background;
+    m_rd.sceneData.backgroundColor = nvmath::vec3f(background);
     m_rd.sceneData.fragmentLoad    = m_rd.uiData.m_fragmentLoad;
 
     // fill scene UBO
