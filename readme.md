@@ -12,6 +12,10 @@ This texture is then displayed on Direct Display and simultaneously is shown on 
 <img src="doc/Overview.png" alt="overview" title="overview" width="600">
 
 ### Prerequisites
+Only certain editions of Windows support removing a display from the desktop, please refer to the [Microsoft documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/specialized-monitors) for more information.
+
+In addition to this requirement, the NVIDIA driver implementation of this feature is only supported on Windows 11 and later, in the editions discussed in the Microsoft documentation.
+
 To run this sample, the test system needs to have at least two displays connected, and at least one display needs to be configured as Direct Display output.
 
 To be able to enumerate and take over a display as a Direct Display, it first needs to be taken out of the Windows desktop.
@@ -48,4 +52,8 @@ Make sure to have installed the [Vulkan-SDK](http://lunarg.com/vulkan-sdk/). Alw
 Ideally, clone this and other interesting [nvpro-samples](https://github.com/nvpro-samples) repositories into a common subdirectory. You will always need [nvpro_core](https://github.com/nvpro-samples/nvpro_core). The nvpro_core is searched either as a subdirectory of the sample, or one directory up.
 
 If you are interested in multiple samples, you can use [build_all](https://github.com/nvpro-samples/build_all) CMAKE as entry point, it will also give you options to enable/disable individual samples when creating the solutions.
+
+### Known Issues
+It is possible that after the ddisplay has been in standby the first initialization of the sample fails in creating the swapchain.
+Please just restart the sample in this case.
 

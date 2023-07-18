@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2023, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -43,6 +43,9 @@ public:
   // call this with the GL context current that's used for interop 
   bool init();
 
+  // shut down VKDirectDisplay
+  void shutdown();
+
   // width and height of swapchain interop textures
   // by default the highest resolution available for the direct display
   uint32_t getWidth()  { return m_swapchainExtent.width; }
@@ -70,23 +73,25 @@ private:
   struct VKGLSyncData
   {
     // VK texture
-    vk::UniqueImage         m_image;
     vk::UniqueDeviceMemory  m_deviceMemory;
+    vk::UniqueImage         m_image;
     HANDLE                  m_handle;
     GLuint                  m_memoryObject;
 
-    // GL texture
+    // GL texture handle of VK texture
     GLuint                  m_textureGL;
 
     // VK semaphores
-    vk::UniqueSemaphore m_available; // signal when image is available
-    vk::UniqueSemaphore m_finished;  // wait for GL to be finished
+    vk::UniqueSemaphore m_available; // VK signals to GL: available
+    vk::UniqueSemaphore m_finished;  // GL signals to VK: done rendering
     HANDLE              m_availableHandle;
     HANDLE              m_finishedHandle;
 
-    // GL semaphores
+    // GL semaphore hanldes of VK semaphores
     GLuint              m_availableGL;
     GLuint              m_finishedGL;
+
+
   };
 
   vk::UniqueInstance                m_instance;
@@ -102,9 +107,10 @@ private:
   vk::Format                        m_swapchainFormat{ vk::Format::eUndefined };
   uint32_t                          m_frameIndex{ 0 };
   std::vector<VKGLSyncData>         m_syncData;
+  std::vector<vk::UniqueFence>      m_fences;
   std::vector<vk::UniqueSemaphore>  m_imageAcquiredSemaphores;
   std::vector<vk::UniqueSemaphore>  m_blitFinishedSemaphores;
-  vk::CommandPool                   m_commandPool;
+  vk::UniqueCommandPool             m_commandPool;
   std::vector<vk::CommandBuffer>    m_blitCommandBuffers;
 
   void createInstance();
@@ -112,12 +118,16 @@ private:
   void pickGPU();
   void createDisplaySurface();
   void createLogicalDevice();
+  void createCommandPool();
   void createSwapchain();
   uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
   void createInteropTexture(VKGLSyncData& s);
   void createInteropSemaphores(VKGLSyncData& s);
   void createSyncObjects();
-  void createSemaphores();
+  void createSyncs();
   void createCommandBuffers();
+  vk::CommandBuffer createTmpCmdBuffer();
+  void submitTmpCmdBuffer(vk::CommandBuffer c);
+  void transitionImage(vk::CommandBuffer buf, vk::Image img, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::PipelineStageFlagBits srcStage, vk::PipelineStageFlags dstStage);
 };
 

@@ -58,6 +58,8 @@ else()
   add_executable(${PROJNAME} ${SOURCE_FILES} ${COMMON_SOURCE_FILES} ${PACKAGE_SOURCE_FILES} ${GLSL_FILES})
 endif()
 
+set_property(TARGET ${PROJNAME} PROPERTY CXX_STANDARD 20)
+
 #####################################################################################
 # common source code needed for this sample
 #
