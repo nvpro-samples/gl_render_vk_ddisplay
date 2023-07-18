@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2023, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -23,7 +23,9 @@
 #include "VKDDisplay.h"
 
 #include <algorithm>
+#include <format>
 #include <iostream>
+
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -32,14 +34,24 @@ typedef VkResult(*PFN_vkAcquireWinrtDisplayNV)(VkPhysicalDevice physicalDevice, 
 PFN_vkAcquireWinrtDisplayNV pfn_vkAcquireWinrtDisplayNV = nullptr;
 
 // required instance extenstions
-const std::vector<const char*> requiredInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_DISPLAY_EXTENSION_NAME,
-                                                             VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
-                                                             VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME};
+const std::vector<const char*> requiredInstanceExtensions = { 
+  VK_KHR_SURFACE_EXTENSION_NAME, 
+  VK_KHR_DISPLAY_EXTENSION_NAME,
+  VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+  VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
+  VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+  VK_EXT_DIRECT_MODE_DISPLAY_EXTENSION_NAME 
+};
 
 // required device extensions
 const std::vector<const char*> requiredDeviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
-    VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME, "VK_NV_acquire_winrt_display"};
+  VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+  VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+  VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+  VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
+  VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME,
+  VK_NV_ACQUIRE_WINRT_DISPLAY_EXTENSION_NAME
+};
 
 VKDirectDisplay::VKDirectDisplay() {}
 
@@ -51,9 +63,10 @@ bool VKDirectDisplay::init()
     pickGPU();
     createDisplaySurface();
     createLogicalDevice();
+    createCommandPool();
     createSwapchain();
     createSyncObjects();
-    createSemaphores();
+    createSyncs();
     createCommandBuffers();
     return true;
   }
@@ -64,20 +77,16 @@ bool VKDirectDisplay::init()
   }
 }
 
+void VKDirectDisplay::shutdown()
+{
+  m_device->waitIdle();
+}
+
 GLuint VKDirectDisplay::getTexture()
 {
   // GL: wait for VK image available
+  glWaitSemaphoreEXT(m_syncData[m_frameIndex].m_availableGL, 0, nullptr, 0, nullptr, nullptr);
 
-  // don't wait for the first frame to be available - there's nobody to signal this
-  static bool firstFrame = true;
-  if (firstFrame)
-  {
-    firstFrame = false;
-  }
-  else
-  {
-    glWaitSemaphoreEXT(m_syncData[m_frameIndex].m_availableGL, 0, nullptr, 0, nullptr, nullptr);
-  }
   return m_syncData[m_frameIndex].m_textureGL;
 }
 
@@ -88,49 +97,48 @@ void VKDirectDisplay::submitTexture()
   // VK: blit texture to swapchain image (wait for GL finished, VK image acquired. signal VK blit done)
   // present (wait for VK blit done. signal VK image available)
 
-  // signal GL is done
+  // limit frames in flight
+  m_device->waitForFences(m_fences[m_frameIndex].get(), VK_TRUE, UINT64_MAX);
+  m_device->resetFences({ m_fences[m_frameIndex].get() });
+
+  // GL: signal to VK that rendering is done
   glSignalSemaphoreEXT(m_syncData[m_frameIndex].m_finishedGL, 0, nullptr, 0, nullptr, nullptr);
 
   // RFE: handle return values
   auto r = m_device->acquireNextImageKHR(m_swapchain.get(), std::numeric_limits<uint64_t>::max(),
-                                         m_imageAcquiredSemaphores[m_frameIndex].get(), vk::Fence());
+                                         m_imageAcquiredSemaphores[m_frameIndex].get());
   assert(m_frameIndex == r.value);  // this should be guaranteed, decoupling would mean N*M prepared blit command buffers
-
-  // wait for GL finished & VK imageAcquired, blit/copy current texture onto current swapchain image, signal VK blit finished
+  
+  // wait for GL finished & VK imageAcquired
+  // blit/copy current texture onto current swapchain image
+  // signal VK blit finished
   std::vector<vk::Semaphore> blitWaitSemaphores{m_syncData[m_frameIndex].m_finished.get(),
                                                 m_imageAcquiredSemaphores[m_frameIndex].get()};
+  std::vector<vk::PipelineStageFlags> blitWaitStages{vk::PipelineStageFlagBits::eColorAttachmentOutput, 
+                                                     vk::PipelineStageFlagBits::eColorAttachmentOutput};
   std::vector<vk::Semaphore> blitSignalSemaphores{m_blitFinishedSemaphores[m_frameIndex].get()};
-  vk::PipelineStageFlags blitWaitStages{ vk::PipelineStageFlagBits::eTopOfPipe };
 
-  vk::SubmitInfo submitInfo{uint32_t(blitWaitSemaphores.size()),
-                            &blitWaitSemaphores[0],
-                            &blitWaitStages, 
-                            1,
-                            & m_blitCommandBuffers[m_frameIndex],
-                            uint32_t(blitSignalSemaphores.size()),
-                            & blitSignalSemaphores[0] };
+  vk::SubmitInfo submitInfo{blitWaitSemaphores,
+                            blitWaitStages, 
+                            m_blitCommandBuffers[m_frameIndex],
+                            blitSignalSemaphores };
+  m_presentQueue.submit(submitInfo, m_fences[m_frameIndex].get());
 
-  m_presentQueue.submit(submitInfo, vk::Fence{});
-
+  // wait for VK blit finished
   // present
   std::vector<vk::Semaphore> presentWaitSemaphores{m_blitFinishedSemaphores[m_frameIndex].get()};
-  std::vector<vk::Semaphore> presentSignalSemaphores{m_syncData[m_frameIndex].m_available.get()};
-
-  vk::PresentInfoKHR presentInfo{uint32_t(presentWaitSemaphores.size()),
-                                 presentWaitSemaphores.data(),
-                                 1,
-                                 &m_swapchain.get(),
-                                 &m_frameIndex,
-                                 nullptr};
-  
+  vk::PresentInfoKHR presentInfo{ presentWaitSemaphores,
+                                 m_swapchain.get(),
+                                 m_frameIndex };  
   // VK_KHR_display
   // present on Direct Display output
-  m_presentQueue.presentKHR(presentInfo);
+  auto const present_result = m_presentQueue.presentKHR(presentInfo);
+
+  // signal to GL that the interop texture is available
+  vk::SubmitInfo signalInfo{ {},{},{}, m_syncData[m_frameIndex].m_available.get() };
+  m_presentQueue.submit(signalInfo);
 
   m_frameIndex = (m_frameIndex + 1) % m_swapchainImages.size();
-
-  // RFE
-  glSignalSemaphoreEXT(m_syncData[m_frameIndex].m_availableGL, 0, nullptr, 0, nullptr, nullptr);
 }
 
 void VKDirectDisplay::createInstance()
@@ -142,6 +150,12 @@ void VKDirectDisplay::createInstance()
 
   // check for required instance extensions
   std::vector<vk::ExtensionProperties> availableInstanceExtensions = vk::enumerateInstanceExtensionProperties();
+  {
+    uint32_t major = VK_API_VERSION_MAJOR(VK_HEADER_VERSION_COMPLETE);
+    uint32_t minor = VK_API_VERSION_MINOR(VK_HEADER_VERSION_COMPLETE);
+    uint32_t patch = VK_API_VERSION_PATCH(VK_HEADER_VERSION_COMPLETE);
+    LOGI(std::format("\n\nVK Header version: {}.{}.{}\n", major, minor, patch).c_str());
+  }
 
   std::cout << "\nChecking Instance Extensions\n";
 
@@ -163,11 +177,20 @@ void VKDirectDisplay::createInstance()
     }
   }
   vk::InstanceCreateInfo createInfo{
-      vk::InstanceCreateFlags(),        nullptr, 0, nullptr, uint32_t(requiredInstanceExtensions.size()),
-      requiredInstanceExtensions.data()};
+      vk::InstanceCreateFlags(), nullptr, 0, nullptr,
+      uint32_t(requiredInstanceExtensions.size()), requiredInstanceExtensions.data()};
   m_instance = vk::createInstanceUnique(createInfo);
 
   VULKAN_HPP_DEFAULT_DISPATCHER.init(m_instance.get());
+
+  {
+    uint32_t apiVersion;
+    vkEnumerateInstanceVersion(&apiVersion);
+    uint32_t major = VK_API_VERSION_MAJOR(apiVersion);
+    uint32_t minor = VK_API_VERSION_MINOR(apiVersion);
+    uint32_t patch = VK_API_VERSION_PATCH(apiVersion);
+    LOGI(std::format("Instance version: {}.{}.{}", major, minor, patch).c_str());
+  }
 
   pfn_vkAcquireWinrtDisplayNV = (PFN_vkAcquireWinrtDisplayNV)vkGetInstanceProcAddr(m_instance.get(), "vkAcquireWinrtDisplayNV");
 }
@@ -192,6 +215,7 @@ bool VKDirectDisplay::checkDeviceExtensionSupport(vk::PhysicalDevice device)
     }
     if(!found)
     {
+      std::cerr << "\x1B[31mNOT FOUND: " << required << "\033[0m\n";
       return false;
     }
   }
@@ -202,20 +226,32 @@ void VKDirectDisplay::pickGPU()
 {
   // pick a GPU that has the required device extensions and has a display device attached
   std::vector<vk::PhysicalDevice> devices = m_instance->enumeratePhysicalDevices();
+  LOGI("\n\nFinding GPU with suitable display...\n\n");
   for(const auto& device : devices)
   {
+    const auto props = device.getProperties();
+    LOGI(std::format("\nName:        {}\n", props.deviceName).c_str());
+
+    uint32_t major = VK_API_VERSION_MAJOR(props.apiVersion);
+    uint32_t minor = VK_API_VERSION_MINOR(props.apiVersion);
+    uint32_t patch = VK_API_VERSION_PATCH(props.apiVersion);
+    LOGI(std::format("API version: {}.{}.{}\n", major, minor, patch).c_str());
+
     if(!device.getDisplayPropertiesKHR().empty() && checkDeviceExtensionSupport(device))
     {
       // VK_KHR_display
       // GPU with ddisplay found
+      LOGI("Suitable device found\n");
       m_gpu = device;
       break;
     }
+    LOGE("Device not suitable\n");
   }
   if(!m_gpu)
   {
     throw std::exception("Could not find a GPU with suitable display device!");
   }
+
 }
 
 void VKDirectDisplay::createDisplaySurface()
@@ -229,14 +265,19 @@ void VKDirectDisplay::createDisplaySurface()
   m_display.displayProperties = m_gpu.getDisplayPropertiesKHR()[0];
   m_display.displayKHR        = m_display.displayProperties.display;
 
+  // acquire display
+  m_gpu.acquireWinrtDisplayNV(m_display.displayKHR);
+
   // pick highest available resolution
   auto modes               = m_gpu.getDisplayModePropertiesKHR(m_display.displayKHR);
   m_display.modeProperties = modes[0];
   for(auto& m : modes)
   {
-    auto i = m.parameters.visibleRegion;
-    auto c = m_display.modeProperties.parameters.visibleRegion;
-    if(i.height * i.width > c.height * c.width)
+    auto ires = m.parameters.visibleRegion;
+    auto ifreq = m.parameters.refreshRate;
+    auto cres = m_display.modeProperties.parameters.visibleRegion;
+    auto cfreq = m_display.modeProperties.parameters.refreshRate;
+    if(ires.height * ires.width + ifreq > cres.height * cres.width + cfreq )
     {
       m_display.modeProperties = m;
     }
@@ -307,8 +348,6 @@ void VKDirectDisplay::createDisplaySurface()
 
   m_surface = m_instance->createDisplayPlaneSurfaceKHRUnique(surfaceCreateInfo);
 
-  VkResult res = pfn_vkAcquireWinrtDisplayNV(m_gpu, m_display.displayKHR);
-
   const auto& d = m_display.displayProperties;
   LOGOK("Using display: %s\n  physical resolution: %i x %i\n", d.displayName, d.physicalResolution.width,
         d.physicalResolution.height);
@@ -342,7 +381,7 @@ void VKDirectDisplay::createLogicalDevice()
 
   vk::DeviceQueueCreateInfo queueCreateInfo{vk::DeviceQueueCreateFlags(), m_presentFamily, 1, &priority};
 
-  vk::PhysicalDeviceFeatures deviceFeatures;
+  vk::PhysicalDeviceFeatures deviceFeatures = m_gpu.getFeatures();  
 
   // create the logical device and the present queue
   vk::DeviceCreateInfo deviceCreateInfo{vk::DeviceCreateFlags(),
@@ -358,6 +397,13 @@ void VKDirectDisplay::createLogicalDevice()
   m_presentQueue = m_device->getQueue(m_presentFamily, 0);
 
   load_VK_EXTENSIONS(m_instance.get(), vkGetInstanceProcAddr, m_device.get(), vkGetDeviceProcAddr);
+}
+
+void VKDirectDisplay::createCommandPool()
+{
+    // create command pool
+    vk::CommandPoolCreateInfo commandPoolCreateInfo = { vk::CommandPoolCreateFlags(), m_presentFamily };
+    m_commandPool = m_device->createCommandPoolUnique(commandPoolCreateInfo);
 }
 
 void VKDirectDisplay::createSwapchain()
@@ -430,7 +476,7 @@ void VKDirectDisplay::createSwapchain()
                                                  format.colorSpace,
                                                  extent,
                                                  1,
-                                                 vk::ImageUsageFlags(vk::ImageUsageFlagBits::eColorAttachment),
+                                                 vk::ImageUsageFlags(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst),
                                                  vk::SharingMode::eExclusive,
                                                  0,
                                                  nullptr,
@@ -443,6 +489,8 @@ void VKDirectDisplay::createSwapchain()
   m_swapchainImages = m_device->getSwapchainImagesKHR(m_swapchain.get());
   m_swapchainExtent = extent;
   m_swapchainFormat = format.format;
+
+  // don't need to transition swapchain images from eUndefined here
 }
 
 uint32_t VKDirectDisplay::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties)
@@ -462,6 +510,8 @@ uint32_t VKDirectDisplay::findMemoryType(uint32_t typeFilter, vk::MemoryProperty
 void VKDirectDisplay::createInteropTexture(VKGLSyncData& s)
 {
   // create a VK texture and fill the GL interop data
+
+  // vk image, hint we want to export this memory (eOpaqueWin32)
   vk::ImageCreateInfo imageCreateInfo = {vk::ImageCreateFlags(),
                                          vk::ImageType::e2D,
                                          vk::Format::eR8G8B8A8Unorm,
@@ -470,30 +520,46 @@ void VKDirectDisplay::createInteropTexture(VKGLSyncData& s)
                                          1,
                                          vk::SampleCountFlagBits::e1,
                                          vk::ImageTiling::eOptimal,
-                                         vk::ImageUsageFlags(vk::ImageUsageFlagBits::eColorAttachment),
+                                         vk::ImageUsageFlags(vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc),
                                          vk::SharingMode::eExclusive,
                                          0,
                                          nullptr,
-                                         vk::ImageLayout::ePreinitialized};
-  s.m_image                           = m_device->createImageUnique(imageCreateInfo);
+                                         vk::ImageLayout::eUndefined};
+  vk::ExternalMemoryImageCreateInfo externalMemoryImageCreateInfo = { vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32 };
+  imageCreateInfo.setPNext(&externalMemoryImageCreateInfo);
+  s.m_image = m_device->createImageUnique(imageCreateInfo);
 
   vk::MemoryRequirements memoryRequirements = m_device->getImageMemoryRequirements(s.m_image.get());
   vk::MemoryAllocateInfo memoryAllocateInfo{memoryRequirements.size,
                                             findMemoryType(memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlags())};
 
-  // pass in hint that we want to export this memory
+  // vk memory, also hint we want to export it
   vk::ExportMemoryAllocateInfo exportMemoryAllocateInfo(vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32);
   memoryAllocateInfo.setPNext(&exportMemoryAllocateInfo);
+
+  vk::MemoryPriorityAllocateInfoEXT memoryPriorityAllocateInfo(1.0f);
+  exportMemoryAllocateInfo.setPNext(&memoryPriorityAllocateInfo);
 
   s.m_deviceMemory = m_device->allocateMemoryUnique(memoryAllocateInfo);
 
   m_device->bindImageMemory(s.m_image.get(), s.m_deviceMemory.get(), 0);
 
+  // transition image from eUndefined to vColorAttachmentOptimal
+  auto buf = createTmpCmdBuffer();
+  transitionImage(buf, s.m_image.get(),
+    vk::AccessFlagBits::eNone,
+    vk::AccessFlagBits::eColorAttachmentWrite,
+    vk::ImageLayout::eUndefined,
+    vk::ImageLayout::eColorAttachmentOptimal,
+    vk::PipelineStageFlagBits::eColorAttachmentOutput,
+    vk::PipelineStageFlagBits::eColorAttachmentOutput
+  );
+  submitTmpCmdBuffer(buf);
+
   // create OpenGL interop data
-  VkMemoryGetWin32HandleInfoKHR getHandleInfo{VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR, nullptr,
-                                              s.m_deviceMemory.get(),
-                                              VkExternalMemoryHandleTypeFlagBits::VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT};
-  s.m_handle =  m_device->getMemoryWin32HandleKHR(getHandleInfo);
+  vk::MemoryGetWin32HandleInfoKHR getHandleInfo{ s.m_deviceMemory.get(), vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32 };
+  s.m_handle = m_device->getMemoryWin32HandleKHR(getHandleInfo);
+
   glCreateMemoryObjectsEXT(1, &s.m_memoryObject);
   glImportMemoryWin32HandleEXT(s.m_memoryObject, memoryRequirements.size, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, s.m_handle);
 
@@ -513,8 +579,8 @@ void VKDirectDisplay::createInteropSemaphores(VKGLSyncData& s)
 
   auto makeSemaphore = [&](vk::UniqueSemaphore& s, HANDLE& h, GLuint& g) {
     s = m_device->createSemaphoreUnique(createInfo);
-    VkSemaphoreGetWin32HandleInfoKHR getHandleInfo{VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR, nullptr, s.get(),
-                                                   VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT};
+    vk::SemaphoreGetWin32HandleInfoKHR getHandleInfo( s.get(), vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32 );
+
     h = m_device->getSemaphoreWin32HandleKHR(getHandleInfo);
     glGenSemaphoresEXT(1, &g);
     glImportSemaphoreWin32HandleEXT(g, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, h);
@@ -529,56 +595,153 @@ void VKDirectDisplay::createSyncObjects()
   m_syncData.resize(m_swapchainImages.size());
   for(auto& s : m_syncData)
   {
-    // we have to create our own textures for interop, swapchain images can't be used (boooo!)
+    // we have to create our own textures for interop, swapchain images can't be used
     createInteropTexture(s);
 
     // add semaphores to signal texture ready and render ready
     createInteropSemaphores(s);
+
+    // signal the 'available' semaphore, the interop textures aren't in use yet
+    vk::SubmitInfo submitInfo{ {},{},{}, s.m_available.get() };
+    m_presentQueue.submit(submitInfo);
   }
 }
 
-void VKDirectDisplay::createSemaphores()
+void VKDirectDisplay::createSyncs()
 {
-  vk::SemaphoreCreateInfo createInfo{};
-
+  vk::SemaphoreCreateInfo semaphoreCreateInfo{};
   m_imageAcquiredSemaphores.resize(m_swapchainImages.size());
   for(auto& s : m_imageAcquiredSemaphores)
   {
-    s = m_device->createSemaphoreUnique(createInfo);
+    s = m_device->createSemaphoreUnique(semaphoreCreateInfo);
   }
 
   m_blitFinishedSemaphores.resize(m_swapchainImages.size());
   for(auto& s : m_blitFinishedSemaphores)
   {
-    s = m_device->createSemaphoreUnique(createInfo);
+    s = m_device->createSemaphoreUnique(semaphoreCreateInfo);
+  }
+
+  vk::FenceCreateInfo fenceCreateInfo{};
+  fenceCreateInfo.setFlags(vk::FenceCreateFlagBits::eSignaled);
+  m_fences.resize(m_swapchainImages.size());
+  for (auto& f : m_fences)
+  {
+    f = m_device->createFenceUnique(fenceCreateInfo);
   }
 }
 
 void VKDirectDisplay::createCommandBuffers()
 {
-  // create command pool
-  vk::CommandPoolCreateInfo commandPoolCreateInfo = {vk::CommandPoolCreateFlags(), m_presentFamily};
-  m_commandPool                                   = m_device->createCommandPool(commandPoolCreateInfo);
-
-  vk::CommandBufferAllocateInfo commandBufferAllocateInfo = {m_commandPool, vk::CommandBufferLevel::ePrimary,
+  vk::CommandBufferAllocateInfo commandBufferAllocateInfo = {m_commandPool.get(), vk::CommandBufferLevel::ePrimary,
                                                              uint32_t(m_swapchainImages.size())};
 
   m_blitCommandBuffers = m_device->allocateCommandBuffers(commandBufferAllocateInfo);
 
   for (auto i = 0; i < m_swapchainImages.size(); ++i)
   {
+    auto& swapImg = m_swapchainImages[i];
+    auto& syncImg = m_syncData[i].m_image.get();
+    auto& buf = m_blitCommandBuffers[i];
+
     vk::CommandBufferBeginInfo commandBufferBeginInfo {};
-    auto& b = m_blitCommandBuffers[i];
-    b.begin(commandBufferBeginInfo);
-    std::array<vk::Offset3D, 2> srcoffsets{ vk::Offset3D{ 0,0,0 }, vk::Offset3D{ int32_t(m_swapchainExtent.width), int32_t(m_swapchainExtent.height), 0 } };
-    std::array<vk::Offset3D, 2> dstoffsets{ vk::Offset3D{ 0,int32_t(m_swapchainExtent.height),0 }, vk::Offset3D{ int32_t(m_swapchainExtent.width), 0, 0 } };
+    buf.begin(commandBufferBeginInfo);
+
+    transitionImage(
+      buf, swapImg,
+      vk::AccessFlagBits::eMemoryRead,
+      vk::AccessFlagBits::eTransferWrite,
+      vk::ImageLayout::eUndefined,        // we'll blit to it, no interest in contents
+      vk::ImageLayout::eTransferDstOptimal,
+      vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits::eTransfer
+    );
+
+    transitionImage(
+      buf, syncImg,
+      vk::AccessFlagBits::eColorAttachmentWrite,
+      vk::AccessFlagBits::eTransferRead,
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::ImageLayout::eTransferSrcOptimal,
+      vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits::eTransfer
+    );
+
+    // dstOffsets are flipped because GL is flipped vs VK
+    std::array<vk::Offset3D, 2> srcoffsets{ vk::Offset3D{ 0,0,0 }, vk::Offset3D{ int32_t(m_swapchainExtent.width), int32_t(m_swapchainExtent.height), 1 } };
+    std::array<vk::Offset3D, 2> dstoffsets{ vk::Offset3D{ 0,int32_t(m_swapchainExtent.height),0 }, vk::Offset3D{ int32_t(m_swapchainExtent.width), 0, 1 } };
     vk::ImageSubresourceLayers layers{ vk::ImageAspectFlags{vk::ImageAspectFlagBits::eColor}, 0, 0, 1 };
     vk::ImageBlit region {
       layers, srcoffsets,
       layers, dstoffsets
     };
     std::vector<vk::ImageBlit> regions = { region };
-    b.blitImage(m_syncData[i].m_image.get(), vk::ImageLayout::eTransferSrcOptimal, m_swapchainImages[i], vk::ImageLayout::eTransferDstOptimal, vk::ArrayProxy<const vk::ImageBlit>{ 1, &region }, vk::Filter::eNearest);
-    b.end();
+    buf.blitImage(syncImg, vk::ImageLayout::eTransferSrcOptimal, swapImg, vk::ImageLayout::eTransferDstOptimal, vk::ArrayProxy<const vk::ImageBlit>{ 1, &region }, vk::Filter::eNearest);
+    
+    transitionImage(
+      buf, swapImg,
+      vk::AccessFlagBits::eTransferWrite,
+      vk::AccessFlagBits::eNone,
+      vk::ImageLayout::eTransferDstOptimal, 
+      vk::ImageLayout::ePresentSrcKHR,
+      vk::PipelineStageFlagBits::eTransfer,
+      vk::PipelineStageFlagBits::eBottomOfPipe
+    );
+
+    transitionImage(
+      buf, syncImg,
+      vk::AccessFlagBits::eTransferRead,
+      vk::AccessFlagBits::eColorAttachmentWrite,
+      vk::ImageLayout::eTransferSrcOptimal,
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::PipelineStageFlagBits::eTransfer,
+      vk::PipelineStageFlagBits::eColorAttachmentOutput
+    );
+    
+    buf.end();
   }
 }
+
+vk::CommandBuffer VKDirectDisplay::createTmpCmdBuffer()
+{
+  vk::CommandBufferAllocateInfo allocInfo{ m_commandPool.get(), vk::CommandBufferLevel::ePrimary, 1};
+  vk::CommandBuffer buf;
+  buf = m_device->allocateCommandBuffers(allocInfo)[0];
+
+  vk::CommandBufferBeginInfo beginInfo{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
+  buf.begin(beginInfo);
+  return buf;
+}
+
+void VKDirectDisplay::submitTmpCmdBuffer(vk::CommandBuffer buf)
+{
+  buf.end();
+
+  vk::SubmitInfo submitInfo{ {},{},buf };
+  
+  m_presentQueue.submit(submitInfo);
+  m_presentQueue.waitIdle();
+  m_device->freeCommandBuffers(m_commandPool.get(), buf);
+}
+
+void VKDirectDisplay::transitionImage(vk::CommandBuffer buf, vk::Image img, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::PipelineStageFlagBits srcStage, vk::PipelineStageFlags dstStage)
+{
+  vk::ImageMemoryBarrier barrier{};
+  barrier.setSrcAccessMask(srcAccess);
+  barrier.setDstAccessMask(dstAccess);
+  barrier.setOldLayout(oldLayout);
+  barrier.setNewLayout(newLayout);
+  barrier.setImage(img);
+  barrier.setSubresourceRange({ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 });
+  buf.pipelineBarrier(
+    /*srcStageMask        */srcStage,
+    /*dstStageMask        */dstStage,
+    /*dependencyFlags     */{},
+    /*memoryBarriers      */{},
+    /*bufferMemoryBarriers*/{},
+    /*imageMemoryBarriers */barrier
+  );
+}
+
+
+
