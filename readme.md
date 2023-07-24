@@ -53,7 +53,3 @@ Ideally, clone this and other interesting [nvpro-samples](https://github.com/nvp
 
 If you are interested in multiple samples, you can use [build_all](https://github.com/nvpro-samples/build_all) CMAKE as entry point, it will also give you options to enable/disable individual samples when creating the solutions.
 
-### Known Issues
-It is possible that after the ddisplay has been in standby the first initialization of the sample fails in creating the swapchain.
-Please just restart the sample in this case.
-

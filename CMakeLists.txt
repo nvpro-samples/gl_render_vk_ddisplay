@@ -5,6 +5,11 @@ Project(${PROJNAME})
 Message(STATUS "-------------------------------")
 Message(STATUS "Processing Project ${PROJNAME}:")
 
+Message("tmp change, testing -------------------------------------------*")
+execute_process(COMMAND cmake --help)
+Message("tmp change, testing -------------------------------------------*")
+
+
 #####################################################################################
 # look for nvpro_core 1) as a sub-folder 2) at some other locations
 # this cannot be put anywhere else since we still didn't find setup.cmake yet
@@ -59,6 +64,7 @@ else()
 endif()
 
 set_property(TARGET ${PROJNAME} PROPERTY CXX_STANDARD 20)
+set_property(TARGET ${PROJNAME} PROPERTY CXX_STANDARD_REQUIRED ON)
 
 #####################################################################################
 # common source code needed for this sample

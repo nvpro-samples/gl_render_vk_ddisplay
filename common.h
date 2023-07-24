@@ -78,7 +78,7 @@ layout(std140, binding = UBO_COMP) uniform composeBuffer {
 
 
 /*
- * Copyright (c) 2014-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,7 +92,7 @@ layout(std140, binding = UBO_COMP) uniform composeBuffer {
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2023, NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
 
