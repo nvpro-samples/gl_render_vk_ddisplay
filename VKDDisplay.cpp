@@ -23,7 +23,6 @@
 #include "VKDDisplay.h"
 
 #include <algorithm>
-#include <format>
 #include <iostream>
 
 
@@ -72,7 +71,7 @@ bool VKDirectDisplay::init()
   }
   catch(std::exception const& e)
   {
-    LOGE("VKDirectDisplay::init() failed: %s\n", e.what());
+    PRINTE("VKDirectDisplay::init() failed: {}\n", e.what());
     return false;
   }
 }
@@ -154,7 +153,7 @@ void VKDirectDisplay::createInstance()
     uint32_t major = VK_API_VERSION_MAJOR(VK_HEADER_VERSION_COMPLETE);
     uint32_t minor = VK_API_VERSION_MINOR(VK_HEADER_VERSION_COMPLETE);
     uint32_t patch = VK_API_VERSION_PATCH(VK_HEADER_VERSION_COMPLETE);
-    LOGI(std::format("\n\nVK Header version: {}.{}.{}\n", major, minor, patch).c_str());
+    PRINTI("\n\nVK Header version: {}.{}.{}\n", major, minor, patch);
   }
 
   std::cout << "\nChecking Instance Extensions\n";
@@ -167,7 +166,7 @@ void VKDirectDisplay::createInstance()
       if(std::string(required) == available.extensionName)
       {
         found = true;
-        std::cout << "OK: " << required << "\n";
+        PRINTOK("OK: {}\n", required);
         break;
       }
     }
@@ -189,7 +188,7 @@ void VKDirectDisplay::createInstance()
     uint32_t major = VK_API_VERSION_MAJOR(apiVersion);
     uint32_t minor = VK_API_VERSION_MINOR(apiVersion);
     uint32_t patch = VK_API_VERSION_PATCH(apiVersion);
-    LOGI(std::format("Instance version: {}.{}.{}", major, minor, patch).c_str());
+    PRINTI("Instance version: {}.{}.{}", major, minor, patch);
   }
 
   pfn_vkAcquireWinrtDisplayNV = (PFN_vkAcquireWinrtDisplayNV)vkGetInstanceProcAddr(m_instance.get(), "vkAcquireWinrtDisplayNV");
@@ -209,7 +208,7 @@ bool VKDirectDisplay::checkDeviceExtensionSupport(vk::PhysicalDevice device)
       if(std::string(required) == available.extensionName)
       {
         found = true;
-        std::cout << "OK: " << required << "\n";
+        PRINTOK("OK: {}\n", required);
         break;
       }
     }
@@ -226,26 +225,26 @@ void VKDirectDisplay::pickGPU()
 {
   // pick a GPU that has the required device extensions and has a display device attached
   std::vector<vk::PhysicalDevice> devices = m_instance->enumeratePhysicalDevices();
-  LOGI("\n\nFinding GPU with suitable display...\n\n");
+  PRINTI("\n\nFinding GPU with suitable display...\n\n");
   for(const auto& device : devices)
   {
     const auto props = device.getProperties();
-    LOGI(std::format("\nName:        {}\n", props.deviceName).c_str());
+    PRINTI("\nName:        {}\n", props.deviceName.data());
 
     uint32_t major = VK_API_VERSION_MAJOR(props.apiVersion);
     uint32_t minor = VK_API_VERSION_MINOR(props.apiVersion);
     uint32_t patch = VK_API_VERSION_PATCH(props.apiVersion);
-    LOGI(std::format("API version: {}.{}.{}\n", major, minor, patch).c_str());
+    PRINTI("API version: {}.{}.{}\n", major, minor, patch);
 
     if(!device.getDisplayPropertiesKHR().empty() && checkDeviceExtensionSupport(device))
     {
       // VK_KHR_display
       // GPU with ddisplay found
-      LOGI("Suitable device found\n");
+      PRINTI("Suitable device found\n");
       m_gpu = device;
       break;
     }
-    LOGE("Device not suitable\n");
+    PRINTE("Device not suitable\n");
   }
   if(!m_gpu)
   {
@@ -349,11 +348,11 @@ void VKDirectDisplay::createDisplaySurface()
   m_surface = m_instance->createDisplayPlaneSurfaceKHRUnique(surfaceCreateInfo);
 
   const auto& d = m_display.displayProperties;
-  LOGOK("Using display: %s\n  physical resolution: %i x %i\n", d.displayName, d.physicalResolution.width,
+  PRINTOK("Using display: {}\n  physical resolution: {} x {}\n", d.displayName, d.physicalResolution.width,
         d.physicalResolution.height);
 
   const auto& m = m_display.modeProperties;
-  LOGOK("Display mode: %i x %i @ %fHz\n", m.parameters.visibleRegion.width, m.parameters.visibleRegion.height,
+  PRINTOK("Display mode: {} x {} @ {}Hz\n", m.parameters.visibleRegion.width, m.parameters.visibleRegion.height,
         m.parameters.refreshRate / 1000.0f);
 }
 

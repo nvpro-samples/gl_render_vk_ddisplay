@@ -160,12 +160,12 @@ auto initPrograms(Data& rd) -> bool
   pm.registerInclude("noise.glsl", "noise.glsl");
 
   {
-    programs.scene = pm.createProgram(
-        nvgl::ProgramManager::Definition(GL_VERTEX_SHADER, "#define USE_SCENE_DATA\n", "scene.vert.glsl"),
-        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "#define USE_SCENE_DATA\n", "scene.frag.glsl"));
-    programs.compose = pm.createProgram(
-        nvgl::ProgramManager::Definition(GL_VERTEX_SHADER, "#define USE_COMPOSE_DATA\n", "compose.vert.glsl"),
-        nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "#define USE_COMPOSE_DATA\n", "compose.frag.glsl"));
+    programs.scene =
+        pm.createProgram(nvgl::ProgramManager::Definition(GL_VERTEX_SHADER, "#define USE_SCENE_DATA\n", "scene.vert.glsl"),
+                         nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "#define USE_SCENE_DATA\n", "scene.frag.glsl"));
+    programs.compose =
+        pm.createProgram(nvgl::ProgramManager::Definition(GL_VERTEX_SHADER, "#define USE_COMPOSE_DATA\n", "compose.vert.glsl"),
+                         nvgl::ProgramManager::Definition(GL_FRAGMENT_SHADER, "#define USE_COMPOSE_DATA\n", "compose.frag.glsl"));
   }
 
   validated = pm.areProgramsValid();
@@ -446,9 +446,9 @@ public:
   void rebuild_geometry()
   {
     render::initBuffers(m_rd);
-    LOGOK("Scene data:\n");
-    LOGOK("Vertices per torus:  %i\n", m_rd.buf.numVertices);
-    LOGOK("Triangles per torus: %i\n", m_rd.buf.numIndices / 3);
+    PRINTSTATS("Scene data:\n");
+    PRINTSTATS("Vertices per torus:  {}\n", m_rd.buf.numVertices);
+    PRINTSTATS("Triangles per torus: {}\n", m_rd.buf.numIndices / 3);
   };
 
 protected:
@@ -484,9 +484,9 @@ bool Sample::begin()
   render::initFBOs(m_rd);
   render::initBuffers(m_rd);
 
-  LOGOK("Scene data:\n");
-  LOGOK("Vertices per torus:  %i\n", m_rd.buf.numVertices);
-  LOGOK("Triangles per torus: %i\n", m_rd.buf.numIndices / 3);
+  PRINTSTATS("Scene data:\n");
+  PRINTSTATS("Vertices per torus:  {}\n", m_rd.buf.numVertices);
+  PRINTSTATS("Triangles per torus: {}\n", m_rd.buf.numIndices / 3);
 
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_CULL_FACE);
@@ -635,7 +635,7 @@ void Sample::think(double time)
 
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
     {
-      LOGE("Framebuffer check failed: %i\n", glCheckFramebufferStatus(GL_FRAMEBUFFER));
+      PRINTE("Framebuffer check failed: {}\n", glCheckFramebufferStatus(GL_FRAMEBUFFER));
     }
 
     glClearBufferfv(GL_COLOR, 0, &background[0]);

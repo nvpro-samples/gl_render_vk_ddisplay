@@ -43,6 +43,10 @@ The OpenGL renderer part of the sample obtains an interop texture using ```VKDir
 The submit function blits the content onto a swapchain texture and presents it onto the Direct Display output. The inferface functions of ```VKDirectDisplay``` perform all needed synchronization between OpenGL and Vulkan, making sure that texture operations in one API have finished before the textures are used in the other API.
 The OpenGL renderer also uses the rendered texture to present it on the OpenGL window. In a real-world application this behavior is optional, but can be used as a control display.
 
+### Known Issues
+It is possible that swap chain creation fails in the initialization step of the class ```VKDirectDisplay``` after the ddisplay has been in standby.
+Re-starting the application after a failure should initialize successfully.
+
 ### Source Code
 The relevant parts in the source code are marked with the comment ```// VK_KHR_display``` and should show the areas where Direct Display functionality is used.
 
