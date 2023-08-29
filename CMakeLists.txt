@@ -5,10 +5,6 @@ Project(${PROJNAME})
 Message(STATUS "-------------------------------")
 Message(STATUS "Processing Project ${PROJNAME}:")
 
-Message("tmp change, testing -------------------------------------------*")
-execute_process(COMMAND cmake --help)
-Message("tmp change, testing -------------------------------------------*")
-
 
 #####################################################################################
 # look for nvpro_core 1) as a sub-folder 2) at some other locations
