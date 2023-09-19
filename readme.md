@@ -31,6 +31,9 @@ That monitor will go blank and the Windows desktop will not be extended to this 
 
 ### Vulkan Direct Display
 The Vulkan renderer part of the sample uses the ```VK_KHR_display``` extension to take control over a Direct Display output.
+This extension is not exported by default. The display driver needs to be configured to export the extension.
+The Configure Driver Utility available at [https://www.nvidia.com/en-us/drivers/driver-utility/](https://www.nvidia.com/en-us/drivers/driver-utility/) can be used to configure the driver accordingly.
+Run the utility with administrator rights and choose the option "6: Export VK_KHR_display extension".
 
 ### Running The Sample
 The sample creates an instance of the class ```VKDirectDisplay``` which enumerates and initializes the Direct Display output,
