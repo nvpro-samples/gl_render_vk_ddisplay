@@ -12,7 +12,7 @@
 #define UBO_COMP          0
 
 #ifdef __cplusplus
-using namespace nvmath;
+using namespace glm;
 #endif
 
 struct SceneData
