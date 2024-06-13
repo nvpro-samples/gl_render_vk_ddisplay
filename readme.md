@@ -1,6 +1,6 @@
 # NOTE
 
-[https://github.com/nvpro-samples/vk_ddisplay](vk_ddisplay) is a new sample that shows an updated use of the ddisplay feature, including tools needed to configure the system, and multi-GPU and multi-display support.
+[vk_ddisplay](https://github.com/nvpro-samples/vk_ddisplay) is a new sample that shows an updated use of the ddisplay feature, including tools needed to configure the system, and multi-GPU and multi-display support.
 This sample is left online for documentation purposes.
 
 # OpenGL/Vulkan Direct Display Sample
